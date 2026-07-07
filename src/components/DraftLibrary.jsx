@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createDraftRecord, createSharePayload, decodeDraftFromCode, loadDrafts, saveDrafts, toBoardState } from '../lib/draftLibraryStorage';
 import ShareDraftPanel from './library/ShareDraftPanel';
-import { Copy, Download, FolderOpen, Heart, PencilLine, Plus, Save, Search, Sparkles, Trash2, Upload } from 'lucide-react';
+import { Copy, Download, FolderOpen, Heart, Home, PencilLine, Plus, Save, Search, Sparkles, Trash2, Upload } from 'lucide-react';
 
 const sortOptions = [
   { value: 'modified', label: 'Last Modified' },
@@ -12,7 +12,7 @@ const sortOptions = [
 const TIER_KEYS = ['priority', 's', 'a', 'b', 'c', 'd'];
 const BAN_KEYS = ['banFirst', 'globalBan', 'banLast'];
 
-function DraftLibrary({ onLoadDraft, currentDraft }) {
+function DraftLibrary({ onLoadDraft, currentDraft, onGoHome }) {
   const [drafts, setDrafts] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -21,38 +21,51 @@ function DraftLibrary({ onLoadDraft, currentDraft }) {
   const [draftForm, setDraftForm] = useState(createDraftRecord());
   const [importCode, setImportCode] = useState('');
   const [shareStatus, setShareStatus] = useState('');
+  const [emptyMessage, setEmptyMessage] = useState('');
   const fileInputRef = useRef(null);
 
   useEffect(() => {
     let mounted = true;
-    loadDrafts().then((items) => {
-      if (!mounted) return;
-      const normalized = items.map((draft) => createDraftRecord({}, draft));
-      setDrafts(normalized);
-      if (normalized.length) {
-        setSelectedId(normalized[0].id);
-        setDraftForm(normalized[0]);
-      } else {
-        const starter = createDraftRecord({
-          mode: currentDraft?.mode || 'Competitive',
-          mapName: currentDraft?.mapName || '',
-          mapImage: currentDraft?.mapImage || '',
-          opponentTeam: currentDraft?.opponentTeam || '',
-          mapDescription: currentDraft?.mapDescription || '',
-          mapNotes: currentDraft?.mapNotes || '',
-          mapStrategy: currentDraft?.mapStrategy || '',
-          generalRules: currentDraft?.generalRules || '',
-          tiers: currentDraft?.tiers || { priority: [], s: [], a: [], b: [], c: [], d: [] },
-          bans: currentDraft?.bans || { banFirst: [], globalBan: [], banLast: [] },
-          firstPicks: currentDraft?.firstPicks || [],
-          combos: currentDraft?.combos || [],
-          winConditions: currentDraft?.winConditions || [],
-          counters: currentDraft?.counters || [],
-        });
-        setDraftForm(starter);
+    const hydrate = async () => {
+      try {
+        const items = await loadDrafts();
+        if (!mounted) return;
+        const normalized = items.map((draft) => createDraftRecord({}, draft));
+        setDrafts(normalized);
+        if (normalized.length) {
+          setSelectedId(normalized[0].id);
+          setDraftForm(normalized[0]);
+          setEmptyMessage('');
+        } else {
+          const starter = createDraftRecord({
+            mode: currentDraft?.mode || 'Competitive',
+            mapName: currentDraft?.mapName || '',
+            mapImage: currentDraft?.mapImage || '',
+            opponentTeam: currentDraft?.opponentTeam || '',
+            mapDescription: currentDraft?.mapDescription || '',
+            mapNotes: currentDraft?.mapNotes || '',
+            mapStrategy: currentDraft?.mapStrategy || '',
+            generalRules: currentDraft?.generalRules || '',
+            tiers: currentDraft?.tiers || { priority: [], s: [], a: [], b: [], c: [], d: [] },
+            bans: currentDraft?.bans || { banFirst: [], globalBan: [], banLast: [] },
+            firstPicks: currentDraft?.firstPicks || [],
+            combos: currentDraft?.combos || [],
+            winConditions: currentDraft?.winConditions || [],
+            counters: currentDraft?.counters || [],
+          });
+          setDraftForm(starter);
+          setEmptyMessage('Nessun Draft salvato');
+        }
+        setReady(true);
+      } catch (error) {
+        if (!mounted) return;
+        setDrafts([]);
+        setDraftForm(createDraftRecord());
+        setEmptyMessage('Nessun Draft salvato');
+        setReady(true);
       }
-      setReady(true);
-    });
+    };
+    hydrate();
     return () => {
       mounted = false;
     };
@@ -61,7 +74,17 @@ function DraftLibrary({ onLoadDraft, currentDraft }) {
   useEffect(() => {
     if (!ready) return;
     const timer = window.setTimeout(() => {
-      saveDrafts(drafts);
+      saveDrafts(drafts)
+        .then(() => {
+          if (drafts.length === 0) {
+            setEmptyMessage('Nessun Draft salvato');
+          } else {
+            setEmptyMessage('');
+          }
+        })
+        .catch(() => {
+          setEmptyMessage('Nessun Draft salvato');
+        });
     }, 1000);
     return () => window.clearTimeout(timer);
   }, [drafts, ready]);
@@ -107,9 +130,10 @@ function DraftLibrary({ onLoadDraft, currentDraft }) {
     const nextDrafts = [newDraft, ...drafts];
     setDrafts(nextDrafts);
     syncSelection(newDraft);
+    setEmptyMessage('');
   };
 
-  const saveCurrentDraft = () => {
+  const saveCurrentDraft = async () => {
     const payload = {
       ...(selectedDraft || draftForm),
       modifiedAt: new Date().toISOString(),
@@ -121,6 +145,13 @@ function DraftLibrary({ onLoadDraft, currentDraft }) {
       : [payload, ...drafts];
     setDrafts(nextDrafts);
     syncSelection(payload);
+    try {
+      await saveDrafts(nextDrafts);
+      setShareStatus('Draft salvato correttamente');
+      setEmptyMessage('');
+    } catch {
+      setShareStatus('Salvataggio locale non disponibile');
+    }
   };
 
   const saveAsDraft = () => {
@@ -230,6 +261,9 @@ function DraftLibrary({ onLoadDraft, currentDraft }) {
     event.target.value = '';
   };
 
+  const showEmptyState = drafts.length === 0;
+  const emptyText = ready ? (emptyMessage || 'Nessun Draft salvato') : 'Caricamento Draft...';
+
   const filteredDrafts = useMemo(() => {
     const query = searchTerm.toLowerCase();
     return [...drafts]
@@ -249,12 +283,13 @@ function DraftLibrary({ onLoadDraft, currentDraft }) {
           <div className="brand-mark"><Sparkles size={18} /></div>
           <div>
             <p className="eyebrow">Draft Library</p>
-            <h2>Manage every plan from one polished dashboard</h2>
+            <h2>Gestisci tutti i tuoi Draft senza account</h2>
           </div>
         </div>
         <div className="library-actions">
-          <button className="ghost-button" onClick={createNewDraft}><Plus size={15} /> New Draft</button>
-          <button className="ghost-button" onClick={saveCurrentDraft}><Save size={15} /> Save Draft</button>
+          <button className="ghost-button" onClick={onGoHome || (() => window.history.back())}><Home size={15} /> Torna alla Home</button>
+          <button className="ghost-button" onClick={createNewDraft}><Plus size={15} /> Nuovo Draft</button>
+          <button className="ghost-button" onClick={saveCurrentDraft}><Save size={15} /> Salva Draft</button>
           <button className="ghost-button" onClick={saveAsDraft}><Copy size={15} /> Save As</button>
           <button className="ghost-button" onClick={loadSelectedDraft}><FolderOpen size={15} /> Load Draft</button>
           <button className="ghost-button" onClick={renameDraft}><PencilLine size={15} /> Rename Draft</button>
@@ -296,6 +331,23 @@ function DraftLibrary({ onLoadDraft, currentDraft }) {
             </div>
           </div>
 
+          <div className="panel-title-row">
+            <div>
+              <p className="eyebrow">I miei Draft</p>
+              <h4>Draft salvati</h4>
+            </div>
+          </div>
+
+          {showEmptyState ? (
+            <div className="empty-state">
+              <p>{emptyText}</p>
+              <div className="library-actions compact-actions">
+                <button className="ghost-button" onClick={createNewDraft}><Plus size={15} /> Crea nuovo Draft</button>
+                <button className="ghost-button" onClick={onGoHome || (() => window.history.back())}><Home size={15} /> Torna alla Home</button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="draft-list">
             {filteredDrafts.map((draft) => (
               <div key={draft.id} className={`draft-card ${selectedDraft?.id === draft.id ? 'active' : ''}`}>
@@ -304,8 +356,8 @@ function DraftLibrary({ onLoadDraft, currentDraft }) {
                     <strong>{draft.name}</strong>
                     <span className="draft-card__fav">{draft.favorite ? '★' : '☆'}</span>
                   </div>
-                  <span>{draft.gameMode || 'Untitled mode'}</span>
-                  <small>{draft.mapName || 'No map yet'}</small>
+                  <span>{draft.gameMode || 'Modalità'}</span>
+                  <small>{draft.mapName || 'Nessuna mappa'}</small>
                   <p>{new Date(draft.modifiedAt).toLocaleString()}</p>
                 </button>
                 <button className="chip-remove draft-card__icon" onClick={() => { const nextDraft = { ...draft, favorite: !draft.favorite }; setDrafts((prev) => prev.map((item) => (item.id === draft.id ? nextDraft : item))); setDraftForm(nextDraft); }}><Heart size={14} fill={draft.favorite ? '#ff5f7d' : 'none'} /></button>
@@ -318,9 +370,9 @@ function DraftLibrary({ onLoadDraft, currentDraft }) {
           <div className="panel-title-row">
             <div>
               <p className="eyebrow">Draft Editor</p>
-              <h3>{selectedDraft?.name || 'New Draft'}</h3>
+              <h3>{selectedDraft?.name || 'Nuovo Draft'}</h3>
             </div>
-            <div className="panel-badge">Auto-save • 1s</div>
+            <div className="panel-badge">Auto-save • locale</div>
           </div>
 
           <div className="library-form-grid">

@@ -615,6 +615,22 @@ h1 {
   padding: 6px;
 }
 
+.empty-state {
+  display: grid;
+  gap: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 16px;
+  margin-top: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.compact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .recent-panel {
   display: grid;
   gap: 8px;

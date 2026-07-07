@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronUp,
   Crown,
+  Home,
   ImagePlus,
   Library,
   PlusCircle,
@@ -281,7 +282,7 @@ function App() {
             <button className="ghost-button" onClick={() => setViewMode('board')}><ChevronUp size={15} /> Back to Draft Board</button>
           </div>
         </header>
-        <DraftLibrary currentDraft={state} onLoadDraft={handleLibraryLoad} />
+        <DraftLibrary currentDraft={state} onLoadDraft={handleLibraryLoad} onGoHome={() => setViewMode('board')} />
       </div>
     );
   }
