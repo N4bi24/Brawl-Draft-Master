@@ -15,12 +15,15 @@ import {
   ChevronUp,
   Crown,
   ImagePlus,
+  Library,
   PlusCircle,
   Search,
   Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
+import DraftLibrary from './components/DraftLibrary';
+import { loadBoardState, saveBoardState } from './lib/draftLibraryStorage';
 
 const STORAGE_KEY = 'brawl-draft-master-state-v3';
 
@@ -146,37 +149,41 @@ const buildDefaultState = () => ({
   counters: [{ id: createId(), title: '', text: '', brawlers: [] }],
 });
 
-const getInitialState = () => {
-  if (typeof window === 'undefined') return buildDefaultState();
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) return buildDefaultState();
-    const parsed = JSON.parse(stored);
-    const base = buildDefaultState();
-    return {
-      ...base,
-      ...parsed,
-      tiers: { ...base.tiers, ...(parsed.tiers || {}) },
-      bans: { ...base.bans, ...(parsed.bans || {}) },
-      combos: parsed.combos?.length ? parsed.combos : base.combos,
-      winConditions: parsed.winConditions?.length ? parsed.winConditions : base.winConditions,
-      counters: parsed.counters?.length ? parsed.counters : base.counters,
-      firstPicks: parsed.firstPicks || base.firstPicks,
-    };
-  } catch {
-    return buildDefaultState();
-  }
+const getInitialState = async () => {
+  const base = buildDefaultState();
+  const stored = await loadBoardState(base);
+  return {
+    ...base,
+    ...stored,
+    tiers: { ...base.tiers, ...(stored.tiers || {}) },
+    bans: { ...base.bans, ...(stored.bans || {}) },
+    combos: stored.combos?.length ? stored.combos : base.combos,
+    winConditions: stored.winConditions?.length ? stored.winConditions : base.winConditions,
+    counters: stored.counters?.length ? stored.counters : base.counters,
+    firstPicks: stored.firstPicks || base.firstPicks,
+  };
 };
 
 function App() {
-  const [state, setState] = useState(getInitialState);
+  const [state, setState] = useState(buildDefaultState);
   const [activeDrag, setActiveDrag] = useState(null);
   const [drawerSearch, setDrawerSearch] = useState('');
+  const [viewMode, setViewMode] = useState('board');
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    }
+    let active = true;
+    getInitialState().then((initialState) => {
+      if (active) {
+        setState(initialState);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    saveBoardState(state);
   }, [state]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -254,6 +261,31 @@ function App() {
     addDraftEntry(target, draggedBrawlerId);
   };
 
+  const handleLibraryLoad = (nextState) => {
+    setState((prev) => ({ ...prev, ...nextState, lastUpdated: getTimestamp() }));
+    setViewMode('board');
+  };
+
+  if (viewMode === 'library') {
+    return (
+      <div className="app-shell">
+        <header className="topbar">
+          <div className="brand-block">
+            <div className="brand-mark"><Crown size={18} /></div>
+            <div>
+              <p className="eyebrow">Draft Library</p>
+              <h1>Brawl Draft Master</h1>
+            </div>
+          </div>
+          <div className="topbar-controls">
+            <button className="ghost-button" onClick={() => setViewMode('board')}><ChevronUp size={15} /> Back to Draft Board</button>
+          </div>
+        </header>
+        <DraftLibrary currentDraft={state} onLoadDraft={handleLibraryLoad} />
+      </div>
+    );
+  }
+
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} onDragStart={({ active }) => setActiveDrag(active.data.current?.brawlerId || null)} onDragCancel={() => setActiveDrag(null)}>
       <div className="app-shell">
@@ -267,6 +299,7 @@ function App() {
           </div>
 
           <div className="topbar-controls">
+            <button className="ghost-button" onClick={() => setViewMode('library')}><Library size={15} /> Draft Library</button>
             <label className="control-pill"><span>Mode</span><input value={state.mode} onChange={(event) => updateState((prev) => ({ ...prev, mode: event.target.value }))} /></label>
             <label className="control-pill"><span>Map</span><input value={state.mapName} onChange={(event) => updateState((prev) => ({ ...prev, mapName: event.target.value }))} /></label>
             <label className="control-pill"><span>Opponent Team</span><input value={state.opponentTeam} onChange={(event) => updateState((prev) => ({ ...prev, opponentTeam: event.target.value }))} /></label>
